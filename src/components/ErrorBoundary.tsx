@@ -3,13 +3,11 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
-  fallback?: ReactNode;
 }
 
 interface State {
   hasError: boolean;
   error?: Error;
-  errorInfo?: ErrorInfo;
 }
 
 class ErrorBoundary extends Component<Props, State> {
@@ -19,75 +17,45 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   static getDerivedStateFromError(error: Error): State {
-    // Update state so the next render will show the fallback UI
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // Log the error for debugging
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
-    
-    this.setState({
-      error,
-      errorInfo
-    });
+    console.error('Error caught by boundary:', error, errorInfo);
   }
-
-  handleReset = () => {
-    this.setState({ hasError: false, error: undefined, errorInfo: undefined });
-  };
 
   render() {
     if (this.state.hasError) {
-      // Custom fallback UI
-      if (this.props.fallback) {
-        return this.props.fallback;
-      }
-
       return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+        <div className="min-h-screen bg-gradient-to-br from-red-50 to-red-100 flex items-center justify-center p-4">
+          <div className="max-w-md mx-auto text-center">
+            <div className="bg-white rounded-2xl shadow-xl p-8 border border-red-200">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mb-6">
                 <AlertTriangle className="h-8 w-8 text-red-600" />
               </div>
-              
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">
+              <h1 className="text-2xl font-bold text-gray-900 mb-4">
                 Something went wrong
-              </h2>
-              
+              </h1>
               <p className="text-gray-600 mb-6">
-                The application encountered an unexpected error. This has been logged and our team will investigate.
+                We encountered an unexpected error. Please try refreshing the page.
               </p>
-              
-              <div className="space-y-3">
-                <button
-                  onClick={this.handleReset}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center"
-                >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Try Again
-                </button>
-                
-                <button
-                  onClick={() => window.location.reload()}
-                  className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors"
-                >
-                  Reload Page
-                </button>
-              </div>
-              
-              {process.env.NODE_ENV === 'development' && this.state.error && (
-                <details className="mt-6 text-left">
-                  <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700">
-                    Error Details (Development Only)
+              {this.state.error && (
+                <details className="mb-6 text-left">
+                  <summary className="cursor-pointer text-sm font-medium text-gray-700 mb-2">
+                    Error Details
                   </summary>
-                  <div className="mt-2 p-3 bg-gray-50 rounded text-xs font-mono text-red-600 overflow-auto max-h-32">
-                    <div className="font-bold">{this.state.error.name}: {this.state.error.message}</div>
-                    <div className="mt-1 text-gray-600">{this.state.error.stack}</div>
+                  <div className="bg-gray-50 p-4 rounded-lg text-xs font-mono text-gray-600 overflow-auto">
+                    {this.state.error.message}
                   </div>
                 </details>
               )}
+              <button
+                onClick={() => window.location.reload()}
+                className="inline-flex items-center px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh Page
+              </button>
             </div>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Navigation, MapPin, AlertTriangle, Shield, Waves, Activity, Users } from 'lucide-react';
+import { Navigation, MapPin, AlertTriangle, Shield, Waves, Activity, Users, UserCheck } from 'lucide-react';
 import RegistrationForm from './components/RegistrationForm';
+import FishermanLogin from './components/FishermanLogin';
 import Dashboard from './components/Dashboard';
 import CoastGuardDashboard from './components/CoastGuardDashboard';
 import AlertSystem from './components/AlertSystem';
@@ -9,6 +10,7 @@ import CoastGuardLocationTracker from './components/CoastGuardLocationTracker';
 import CoastGuardVesselStatus from './components/CoastGuardVesselStatus';
 import AIMonitor from './components/AIMonitor';
 import WorldMap from './components/WorldMap';
+import { userService } from './services/userService';
 
 export interface BoatData {
   aisId: string;
@@ -61,6 +63,7 @@ export interface CoastGuardVessel {
 
 function App() {
   const [userType, setUserType] = useState<'fisherman' | 'coastguard' | null>(null);
+  const [fishermanMode, setFishermanMode] = useState<'register' | 'login' | null>(null);
   const [isRegistered, setIsRegistered] = useState(false);
   const [boatData, setBoatData] = useState<BoatData | null>(null);
   const [allBoats, setAllBoats] = useState<BoatData[]>([]);
@@ -70,21 +73,15 @@ function App() {
   const [coastGuardVessel, setCoastGuardVessel] = useState<CoastGuardVessel | null>(null);
   const [isCoastGuardTracking, setIsCoastGuardTracking] = useState(false);
 
-  // Function to load vessels from localStorage
-  const loadVesselsFromStorage = () => {
-    const storedVessels = localStorage.getItem('registeredVessels');
-    if (storedVessels) {
-      try {
-        const vessels = JSON.parse(storedVessels);
-        console.log('🔄 Loading vessels from storage:', vessels.length, 'vessels found');
-        console.log('🔄 Vessel details:', vessels.map(v => ({ aisId: v.aisId, boatId: v.boatId, fishermanName: v.fishermanName })));
-        setAllBoats(vessels);
-      } catch (error) {
-        console.error('Error loading stored vessels:', error);
-        setAllBoats([]);
-      }
-    } else {
-      console.log('🔄 No vessels found in storage');
+  // Function to load vessels from Firebase
+  const loadVesselsFromFirebase = async () => {
+    try {
+      const vessels = await userService.getAllVessels();
+      console.log('🔄 Loading vessels from Firebase:', vessels.length, 'vessels found');
+      console.log('🔄 Vessel details:', vessels.map(v => ({ aisId: v.aisId, boatId: v.boatId, fishermanName: v.fishermanName })));
+      setAllBoats(vessels);
+    } catch (error) {
+      console.error('Error loading vessels from Firebase:', error);
       setAllBoats([]);
     }
   };
@@ -104,35 +101,16 @@ function App() {
       };
       setCoastGuardVessel(cgVessel);
 
-      // Load initial vessel data
-      loadVesselsFromStorage();
+      // Load initial vessel data from Firebase
+      loadVesselsFromFirebase();
 
-      // Set up interval to check for updates from localStorage (more frequent)
-      const storageCheckInterval = setInterval(() => {
-        loadVesselsFromStorage();
-      }, 2000); // Check every 2 seconds for better responsiveness
-
-      // Listen for storage changes (works across browser tabs)
-      const handleStorageChange = (e: StorageEvent) => {
-        if (e.key === 'registeredVessels') {
-          console.log('🔄 Storage change detected, reloading vessels...');
-          loadVesselsFromStorage();
-        }
-      };
-
-      // Also listen for custom events for same-tab communication
-      const handleCustomStorageChange = () => {
-        console.log('🔄 Custom storage change detected, reloading vessels...');
-        loadVesselsFromStorage();
-      };
-
-      window.addEventListener('storage', handleStorageChange);
-      window.addEventListener('vesselsUpdated', handleCustomStorageChange);
+      // Set up interval to check for updates from Firebase (more frequent)
+      const firebaseCheckInterval = setInterval(() => {
+        loadVesselsFromFirebase();
+      }, 5000); // Check every 5 seconds for better responsiveness
 
       return () => {
-        clearInterval(storageCheckInterval);
-        window.removeEventListener('storage', handleStorageChange);
-        window.removeEventListener('vesselsUpdated', handleCustomStorageChange);
+        clearInterval(firebaseCheckInterval);
       };
     }
   }, [userType]);
@@ -175,7 +153,7 @@ function App() {
 
 
 
-  const handleFishermanRegistration = (aisId: string, boatId: string, fishermanName: string, contactInfo: string) => {
+  const handleFishermanRegistration = async (aisId: string, boatId: string, fishermanName: string, contactInfo: string) => {
     // NO DEFAULT LOCATION - will get real location from GPS
     const newBoat: BoatData = {
       aisId,
@@ -193,62 +171,40 @@ function App() {
     setIsRegistered(true);
     setIsTracking(true);
 
-    // Store in localStorage for Coast Guard access
-    const storedVessels = localStorage.getItem('registeredVessels');
-    let vessels: BoatData[] = [];
+    try {
+      // Store vessel data in Firebase
+      await userService.storeVesselData(newBoat);
 
-    if (storedVessels) {
-      try {
-        vessels = JSON.parse(storedVessels);
-      } catch (error) {
-        console.error('Error parsing stored vessels:', error);
-        vessels = [];
-      }
+      // Add to all boats list for Coast Guard tracking
+      setAllBoats(prev => {
+        const existingBoatIndex = prev.findIndex(boat => boat.aisId === aisId);
+        if (existingBoatIndex >= 0) {
+          // Update existing
+          const updated = [...prev];
+          updated[existingBoatIndex] = newBoat;
+          return updated;
+        } else {
+          // Add new
+          return [...prev, newBoat];
+        }
+      });
+
+      // Debug logging for registration
+      console.log('🚢 New vessel registered in Firebase:', {
+        aisId,
+        boatId,
+        fishermanName,
+        timestamp: new Date().toLocaleTimeString()
+      });
+    } catch (error) {
+      console.error('Error storing vessel data in Firebase:', error);
+      // Still proceed with local state even if Firebase fails
     }
-
-    // Check if vessel already exists (by AIS ID)
-    const existingIndex = vessels.findIndex(boat => boat.aisId === aisId);
-    if (existingIndex >= 0) {
-      // Update existing vessel
-      vessels[existingIndex] = newBoat;
-    } else {
-      // Add new vessel
-      vessels.push(newBoat);
-    }
-
-    // Save to localStorage
-    localStorage.setItem('registeredVessels', JSON.stringify(vessels));
-
-    // Dispatch custom event for immediate notification
-    window.dispatchEvent(new CustomEvent('vesselsUpdated'));
-
-    // Add to all boats list for Coast Guard tracking
-    setAllBoats(prev => {
-      const existingBoatIndex = prev.findIndex(boat => boat.aisId === aisId);
-      if (existingBoatIndex >= 0) {
-        // Update existing
-        const updated = [...prev];
-        updated[existingBoatIndex] = newBoat;
-        return updated;
-      } else {
-        // Add new
-        return [...prev, newBoat];
-      }
-    });
-
-    // Debug logging for registration
-    console.log('🚢 New vessel registered:', {
-      aisId,
-      boatId,
-      fishermanName,
-      totalVessels: vessels.length,
-      timestamp: new Date().toLocaleTimeString()
-    });
   };
 
 
 
-  const updateLocation = (lat: number, lng: number) => {
+  const updateLocation = async (lat: number, lng: number) => {
     if (boatData) {
       const updatedBoat = {
         ...boatData,
@@ -271,15 +227,16 @@ function App() {
         const updated = prev.map(boat =>
           boat.aisId === boatData.aisId ? updatedBoat : boat
         );
-
-        // Update localStorage
-        localStorage.setItem('registeredVessels', JSON.stringify(updated));
-
-        // Dispatch custom event for immediate notification
-        window.dispatchEvent(new CustomEvent('vesselsUpdated'));
-
         return updated;
       });
+
+      // Update location in Firebase
+      try {
+        await userService.updateUserLocation(boatData.aisId, { lat, lng, timestamp: Date.now() });
+        await userService.storeVesselData(updatedBoat);
+      } catch (error) {
+        console.error('Error updating location in Firebase:', error);
+      }
     }
   };
 
@@ -292,7 +249,7 @@ function App() {
     setAlerts(prev => [newAlert, ...prev].slice(0, 50));
   };
 
-  const updateBoatStatus = (status: BoatData['status']) => {
+  const updateBoatStatus = async (status: BoatData['status']) => {
     if (boatData) {
       const updatedBoat = { ...boatData, status };
       setBoatData(updatedBoat);
@@ -302,15 +259,15 @@ function App() {
         const updated = prev.map(boat =>
           boat.aisId === boatData.aisId ? updatedBoat : boat
         );
-
-        // Update localStorage
-        localStorage.setItem('registeredVessels', JSON.stringify(updated));
-
-        // Dispatch custom event for immediate notification
-        window.dispatchEvent(new CustomEvent('vesselsUpdated'));
-
         return updated;
       });
+
+      // Update status in Firebase
+      try {
+        await userService.updateVesselStatus(boatData.aisId, status);
+      } catch (error) {
+        console.error('Error updating vessel status in Firebase:', error);
+      }
     }
   };
 
@@ -342,23 +299,23 @@ function App() {
     }, 2000);
   };
 
-  const updateBoatStatusByCoastGuard = (aisId: string, status: BoatData['status']) => {
+  const updateBoatStatusByCoastGuard = async (aisId: string, status: BoatData['status']) => {
     setAllBoats(prev => {
       const updated = prev.map(boat =>
         boat.aisId === aisId ? { ...boat, status } : boat
       );
-
-      // Update localStorage
-      localStorage.setItem('registeredVessels', JSON.stringify(updated));
-
-      // Dispatch custom event for immediate notification
-      window.dispatchEvent(new CustomEvent('vesselsUpdated'));
-
       return updated;
     });
 
     if (boatData && boatData.aisId === aisId) {
       setBoatData(prev => prev ? { ...prev, status } : null);
+    }
+
+    // Update status in Firebase
+    try {
+      await userService.updateVesselStatus(aisId, status);
+    } catch (error) {
+      console.error('Error updating vessel status in Firebase:', error);
     }
   };
 
@@ -401,18 +358,35 @@ function App() {
                   Fisherman Portal
                 </h2>
                 <p className="text-gray-600 leading-relaxed">
-                  Register your vessel for real-time monitoring, compliance tracking, and safety alerts
+                  Register your vessel or login to access your dashboard
                 </p>
               </div>
-              <button
-                onClick={() => setUserType('fisherman')}
-                className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
-              >
-                <span className="flex items-center justify-center">
-                  Continue as Fisherman
-                  <Navigation className="h-5 w-5 ml-2 group-hover:translate-x-1 transition-transform duration-300" />
-                </span>
-              </button>
+              <div className="space-y-3">
+                <button
+                  onClick={() => {
+                    setUserType('fisherman');
+                    setFishermanMode('register');
+                  }}
+                  className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
+                >
+                  <span className="flex items-center justify-center">
+                    Register New Vessel
+                    <Navigation className="h-5 w-5 ml-2 group-hover:translate-x-1 transition-transform duration-300" />
+                  </span>
+                </button>
+                <button
+                  onClick={() => {
+                    setUserType('fisherman');
+                    setFishermanMode('login');
+                  }}
+                  className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
+                >
+                  <span className="flex items-center justify-center">
+                    Login to Dashboard
+                    <UserCheck className="h-5 w-5 ml-2 group-hover:translate-x-1 transition-transform duration-300" />
+                  </span>
+                </button>
+              </div>
             </div>
 
             <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl p-8 border border-white/20 hover:shadow-3xl hover:scale-105 transition-all duration-300 group">
@@ -517,7 +491,7 @@ function App() {
                 onSendMessage={sendCoastGuardMessage}
                 onUpdateBoatStatus={updateBoatStatusByCoastGuard}
                 messages={coastGuardMessages}
-                onRefreshVessels={loadVesselsFromStorage}
+                onRefreshVessels={loadVesselsFromFirebase}
               />
             </div>
             <div className="space-y-6">
@@ -538,7 +512,7 @@ function App() {
     );
   }
 
-  if (!isRegistered) {
+  if (userType === 'fisherman' && !isRegistered) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-600 to-cyan-400 relative overflow-hidden">
         {/* Animated background elements */}
@@ -555,14 +529,24 @@ function App() {
             </div>
             <p className="text-2xl text-white/90 font-light drop-shadow-lg">AI-Powered Maritime Intelligence System</p>
             <button
-              onClick={() => setUserType(null)}
+              onClick={() => {
+                setUserType(null);
+                setFishermanMode(null);
+              }}
               className="mt-6 text-white/80 hover:text-white transition-colors bg-white/10 px-4 py-2 rounded-lg backdrop-blur-sm"
             >
               ← Back to Portal Selection
             </button>
           </div>
           <div className="relative z-10">
-            <RegistrationForm onRegister={handleFishermanRegistration} />
+            {fishermanMode === 'login' ? (
+              <FishermanLogin 
+                onLogin={handleFishermanRegistration} 
+                onBack={() => setFishermanMode(null)}
+              />
+            ) : (
+              <RegistrationForm onRegister={handleFishermanRegistration} />
+            )}
           </div>
         </div>
       </div>
@@ -611,6 +595,7 @@ function App() {
               <button
                 onClick={() => {
                   setUserType(null);
+                  setFishermanMode(null);
                   setIsRegistered(false);
                   setBoatData(null);
                   setIsTracking(false);

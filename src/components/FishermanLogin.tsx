@@ -1,23 +1,24 @@
 import React, { useState } from 'react';
-import { Ship, Radio, ArrowRight, AlertCircle, Activity, Loader2, CheckCircle } from 'lucide-react';
+import { Ship, Radio, ArrowRight, AlertCircle, Activity, UserCheck, Lock } from 'lucide-react';
 import { userService } from '../services/userService';
 
-interface RegistrationFormProps {
-  onRegister: (aisId: string, boatId: string, fishermanName: string, contactInfo: string) => void;
+interface FishermanLoginProps {
+  onLogin: (aisId: string, boatId: string, fishermanName: string, contactInfo: string) => void;
+  onBack: () => void;
 }
 
-const RegistrationForm: React.FC<RegistrationFormProps> = ({ onRegister }) => {
+const FishermanLogin: React.FC<FishermanLoginProps> = ({ onLogin, onBack }) => {
   const [aisId, setAisId] = useState('');
   const [boatId, setBoatId] = useState('');
   const [fishermanName, setFishermanName] = useState('');
   const [contactInfo, setContactInfo] = useState('');
-  const [errors, setErrors] = useState<{ aisId?: string; boatId?: string; fishermanName?: string; contactInfo?: string }>({});
+  const [errors, setErrors] = useState<{ aisId?: string; boatId?: string; fishermanName?: string; contactInfo?: string; general?: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [statusMessage, setStatusMessage] = useState('');
 
   const validateForm = () => {
-    const newErrors: { aisId?: string; boatId?: string; fishermanName?: string; contactInfo?: string } = {};
+    const newErrors: { aisId?: string; boatId?: string; fishermanName?: string; contactInfo?: string; general?: string } = {};
     
     if (!aisId.trim()) {
       newErrors.aisId = 'AIS Signal ID is required';
@@ -53,34 +54,41 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onRegister }) => {
       setStatusMessage('');
 
       try {
-        // Check if user already exists
-        const userExists = await userService.userExists(aisId.trim());
-        if (userExists) {
+        // Check if user exists and verify details
+        const userDetails = await userService.getUserDetails(aisId.trim());
+        
+        if (!userDetails) {
           setSubmitStatus('error');
-          setStatusMessage('A vessel with this AIS ID is already registered. Please use a different AIS ID.');
+          setErrors({ general: 'No vessel found with this AIS ID. Please register first.' });
           return;
         }
 
-        // Store user details in Firebase
-        await userService.storeUserDetails({
-          aisId: aisId.trim(),
-          boatId: boatId.trim(),
-          fishermanName: fishermanName.trim(),
-          contactInfo: contactInfo.trim()
-        });
+        // Verify the entered details match the registered details
+        if (userDetails.boatId !== boatId.trim() || 
+            userDetails.fishermanName !== fishermanName.trim() || 
+            userDetails.contactInfo !== contactInfo.trim()) {
+          setSubmitStatus('error');
+          setErrors({ general: 'Vessel details do not match. Please check your information.' });
+          return;
+        }
 
         setSubmitStatus('success');
-        setStatusMessage('Registration successful! Your vessel is now being monitored.');
+        setStatusMessage('Login successful! Loading your vessel data...');
 
-        // Call the original onRegister function after successful Firebase storage
+        // Call the login function with verified details
         setTimeout(() => {
-          onRegister(aisId.trim(), boatId.trim(), fishermanName.trim(), contactInfo.trim());
+          onLogin(
+            userDetails.aisId,
+            userDetails.boatId,
+            userDetails.fishermanName,
+            userDetails.contactInfo
+          );
         }, 1500);
 
       } catch (error) {
-        console.error('Registration error:', error);
+        console.error('Login error:', error);
         setSubmitStatus('error');
-        setStatusMessage('Registration failed. Please check your connection and try again.');
+        setErrors({ general: 'Login failed. Please check your connection and try again.' });
       } finally {
         setIsSubmitting(false);
       }
@@ -92,12 +100,12 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onRegister }) => {
       <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl p-8 border border-white/20 hover:shadow-3xl transition-all duration-300">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full mb-6 shadow-lg animate-pulse">
-            <Ship className="h-10 w-10 text-white" />
+            <UserCheck className="h-10 w-10 text-white" />
           </div>
           <h2 className="text-3xl font-bold text-gray-900 mb-3 bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">
-            Vessel Registration
+            Vessel Login
           </h2>
-          <p className="text-gray-600 leading-relaxed">Enter your vessel credentials to begin advanced AI monitoring</p>
+          <p className="text-gray-600 leading-relaxed">Enter your registered vessel credentials to access your dashboard</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -111,7 +119,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onRegister }) => {
               id="aisId"
               value={aisId}
               onChange={(e) => setAisId(e.target.value)}
-              placeholder="Enter 9-digit AIS ID"
+              placeholder="Enter your 9-digit AIS ID"
               className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors ${
                 errors.aisId ? 'border-red-300 bg-red-50' : 'border-gray-300'
               } hover:border-blue-400 transition-all duration-200`}
@@ -135,7 +143,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onRegister }) => {
               id="boatId"
               value={boatId}
               onChange={(e) => setBoatId(e.target.value)}
-              placeholder="Enter boat registration ID"
+              placeholder="Enter your boat registration ID"
               className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors ${
                 errors.boatId ? 'border-red-300 bg-red-50' : 'border-gray-300'
               } hover:border-blue-400 transition-all duration-200`}
@@ -150,7 +158,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onRegister }) => {
 
           <div>
             <label htmlFor="fishermanName" className="block text-sm font-medium text-gray-700 mb-2">
-              <Ship className="h-4 w-4 inline mr-2" />
+              <UserCheck className="h-4 w-4 inline mr-2" />
               Captain/Fisherman Name
             </label>
             <input
@@ -158,7 +166,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onRegister }) => {
               id="fishermanName"
               value={fishermanName}
               onChange={(e) => setFishermanName(e.target.value)}
-              placeholder="Enter captain or fisherman name"
+              placeholder="Enter your registered name"
               className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors ${
                 errors.fishermanName ? 'border-red-300 bg-red-50' : 'border-gray-300'
               } hover:border-blue-400 transition-all duration-200`}
@@ -181,7 +189,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onRegister }) => {
               id="contactInfo"
               value={contactInfo}
               onChange={(e) => setContactInfo(e.target.value)}
-              placeholder="Enter phone number for emergency contact"
+              placeholder="Enter your registered phone number"
               className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors ${
                 errors.contactInfo ? 'border-red-300 bg-red-50' : 'border-gray-300'
               } hover:border-blue-400 transition-all duration-200`}
@@ -193,6 +201,13 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onRegister }) => {
               </div>
             )}
           </div>
+
+          {errors.general && (
+            <div className="flex items-center p-4 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm">
+              <AlertCircle className="h-4 w-4 mr-2" />
+              {errors.general}
+            </div>
+          )}
 
           <button
             type="submit"
@@ -207,17 +222,17 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onRegister }) => {
           >
             {isSubmitting ? (
               <span className="flex items-center">
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Registering...
+                <Activity className="h-4 w-4 mr-2 animate-spin" />
+                Verifying...
               </span>
             ) : submitStatus === 'success' ? (
               <span className="flex items-center">
-                <CheckCircle className="h-4 w-4 mr-2" />
-                Registration Successful!
+                <Lock className="h-4 w-4 mr-2" />
+                Login Successful!
               </span>
             ) : (
               <span className="flex items-center">
-                Begin AI Monitoring
+                Access Dashboard
                 <ArrowRight className="h-4 w-4 ml-2 group-hover:translate-x-1 transition-transform" />
               </span>
             )}
@@ -233,6 +248,15 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onRegister }) => {
             </div>
           )}
         </form>
+
+        <div className="mt-8 text-center">
+          <button
+            onClick={onBack}
+            className="text-blue-600 hover:text-blue-800 font-medium transition-colors"
+          >
+            ← Back to Portal Selection
+          </button>
+        </div>
 
         <div className="mt-8 p-6 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border border-blue-100">
           <h3 className="text-sm font-semibold text-blue-900 mb-3 flex items-center">
@@ -263,4 +287,4 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onRegister }) => {
   );
 };
 
-export default RegistrationForm;
+export default FishermanLogin;

@@ -1,0 +1,136 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isCoastGuard() {
+      return isAuthenticated() && request.auth.token.role == 'coastguard';
+    }
+    
+    function isFisherman() {
+      return isAuthenticated() && request.auth.token.role == 'fisherman';
+    }
+    
+    function isOwner(aisId) {
+      return isAuthenticated() && request.auth.uid == aisId;
+    }
+    
+    // Users collection rules
+    match /users/{aisId} {
+      // Allow read access to Coast Guard and vessel owners
+      allow read: if isCoastGuard() || isOwner(aisId);
+      
+      // Allow create for initial registration
+      allow create: if true;
+      
+      // Allow update only by vessel owner or Coast Guard
+      allow update: if isOwner(aisId) || isCoastGuard();
+      
+      // Prevent deletion for safety
+      allow delete: if false;
+    }
+    
+    // Vessels collection rules
+    match /vessels/{aisId} {
+      // Allow read access to Coast Guard and vessel owners
+      allow read: if isCoastGuard() || isOwner(aisId);
+      
+      // Allow create for vessel registration
+      allow create: if true;
+      
+      // Allow update by vessel owner or Coast Guard
+      allow update: if isOwner(aisId) || isCoastGuard();
+      
+      // Prevent deletion for safety
+      allow delete: if false;
+    }
+    
+    // Alerts collection rules
+    match /alerts/{alertId} {
+      // Allow read access to Coast Guard and affected vessel owners
+      allow read: if isCoastGuard() || 
+        (isAuthenticated() && resource.data.targetBoat == request.auth.uid);
+      
+      // Allow create by Coast Guard or AI system
+      allow create: if isCoastGuard();
+      
+      // Allow update by Coast Guard
+      allow update: if isCoastGuard();
+      
+      // Prevent deletion
+      allow delete: if false;
+    }
+    
+    // Messages collection rules
+    match /messages/{messageId} {
+      // Allow read access to Coast Guard and message recipients
+      allow read: if isCoastGuard() || 
+        (isAuthenticated() && resource.data.targetBoat == request.auth.uid);
+      
+      // Allow create by Coast Guard
+      allow create: if isCoastGuard();
+      
+      // Allow update by Coast Guard or message recipient
+      allow update: if isCoastGuard() || 
+        (isAuthenticated() && resource.data.targetBoat == request.auth.uid);
+      
+      // Prevent deletion
+      allow delete: if false;
+    }
+    
+    // Emergency contacts collection
+    match /emergency_contacts/{contactId} {
+      // Only Coast Guard can read emergency contacts
+      allow read: if isCoastGuard();
+      
+      // Allow create by vessel owners
+      allow create: if isAuthenticated();
+      
+      // Allow update by contact owner or Coast Guard
+      allow update: if isOwner(resource.data.aisId) || isCoastGuard();
+      
+      // Prevent deletion
+      allow delete: if false;
+    }
+    
+    // Vessel logs collection
+    match /vessel_logs/{logId} {
+      // Allow read access to Coast Guard and vessel owners
+      allow read: if isCoastGuard() || 
+        (isAuthenticated() && resource.data.aisId == request.auth.uid);
+      
+      // Allow create by vessel owners or Coast Guard
+      allow create: if isAuthenticated();
+      
+      // Allow update by Coast Guard only
+      allow update: if isCoastGuard();
+      
+      // Prevent deletion
+      allow delete: if false;
+    }
+    
+    // Zone violations collection
+    match /zone_violations/{violationId} {
+      // Only Coast Guard can read violations
+      allow read: if isCoastGuard();
+      
+      // Allow create by AI system or Coast Guard
+      allow create: if isCoastGuard();
+      
+      // Allow update by Coast Guard
+      allow update: if isCoastGuard();
+      
+      // Prevent deletion
+      allow delete: if false;
+    }
+    
+    // Default rule - deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
